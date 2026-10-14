@@ -146,10 +146,7 @@
         </div>
 
         <div class="flex items-center space-x-4">
-          <!-- Banner Status Mode Preview -->
-          <div id="preview-badge" class="hidden sm:flex items-center bg-amber-400 text-amber-900 text-xs px-2.5 py-1 rounded-full font-semibold">
-            <i class="fa-solid fa-flask mr-1.5"></i> Mode Preview (Dummy Data)
-          </div>
+
 
           <!-- User Profile / Auth Status -->
           <div id="user-info-bar" class="flex items-center space-x-3">
@@ -265,7 +262,8 @@
               <!-- KOP SURAT -->
               <div class="kop-border flex items-center justify-between pb-3">
                 <div class="w-24 flex-shrink-0 flex justify-center items-center">
-                  <img id="kop-logo" src="https://res.cloudinary.com/bwmgqxug/image/upload/v1789022731/logo95_-_Copy.png" alt="Logo Sekolah" class="max-h-24 object-contain">
+                  <img id="kop-logo" src="https://res.cloudinary.com/bwmgqxug/image/upload/v1789022731/logo95_-_Copy.png" alt="Logo SMKS Budi Mulya" class="max-h-24 object-contain" onerror="this.style.display='none'; document.getElementById('kop-logo-fallback')?.classList.remove('hidden');">
+                  <div id="kop-logo-fallback" class="hidden text-center font-bold text-xs border-2 border-slate-700 rounded-full w-20 h-20 items-center justify-center">SMK<br>BUDI MULYA</div>
                 </div>
                 <div class="flex-grow text-center px-2">
                   <h2 id="kop-nama-sekolah" class="font-bold text-lg sm:text-xl tracking-wide uppercase">SEKOLAH MENENGAH KEJURUAN<br>SMKS BUDI MULYA KASIMAN</h2>
@@ -372,6 +370,11 @@
               <input type="text" id="search-siswa-input" onkeyup="filterTabelSiswa()" placeholder="Cari nama/kelas..." class="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
               <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-xs"></i>
             </div>
+
+            <!-- Download Template Excel -->
+            <button onclick="downloadTemplateExcel()" class="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
+              <i class="fa-solid fa-download mr-1.5"></i> Template Excel
+            </button>
 
             <!-- Import Excel Button (Admin Only) -->
             <button onclick="openImportModal()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
@@ -673,11 +676,7 @@
       showWarningModal();
 
       // Set Mode Preview badge
-      if (IS_PREVIEW) {
-        document.getElementById("preview-badge").classList.remove("hidden");
-        document.getElementById("preview-login-hint")?.classList.remove("hidden");
-        if (!dataSiswa.length) dataSiswa = [...dummySiswa];
-      }
+      if (IS_PREVIEW && !dataSiswa.length) dataSiswa = [...dummySiswa];
 
       // Cache lokal dibaca lebih dahulu agar tampilan tidak menunggu backend.
       if (!IS_PREVIEW) {
@@ -1222,6 +1221,33 @@
     // ================= GAS BACKEND SYNC =================
     function fetchSettingsFromGAS() { return syncFromBackend(); }
     function fetchSiswaFromGAS() { return syncFromBackend(); }
+
+    // Download template Excel/CSV for student import.
+    function downloadTemplateExcel() {
+      const rows = [
+        ["NISN", "NAMA", "TEMPAT_LAHIR", "TANGGAL_LAHIR", "KELAS", "ALAMAT"],
+        ["", "", "", "", "", ""]
+      ];
+      if (window.XLSX) {
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws["!cols"] = [{wch:16},{wch:28},{wch:20},{wch:20},{wch:34},{wch:42}];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Template Siswa");
+        XLSX.writeFile(wb, "Template_Import_Data_Siswa_SMKS_Budi_Mulya.xlsx");
+      } else {
+        const csv = rows.map(row => row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Template_Import_Data_Siswa_SMKS_Budi_Mulya.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+      showToast("Template import data siswa berhasil disiapkan.", "success");
+    }
 
     // ================= TOAST UTILITY =================
     function showToast(msg, type = "info") {

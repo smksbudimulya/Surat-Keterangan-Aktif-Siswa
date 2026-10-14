@@ -390,7 +390,7 @@
             </button>
 
             <!-- Import Excel Button (Admin Only) -->
-            <button onclick="openImportModal()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
+            <button onclick="openImportModal()" class="admin-only operator-import-access hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
               <i class="fa-solid fa-file-excel mr-1.5"></i> Import Excel / CSV
             </button>
 
@@ -500,7 +500,7 @@
         </div>
 
         <!-- Manajemen Pengguna -->
-        <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-4 admin-only hidden">
+        <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-4 admin-only user-management-only hidden">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
             <div>
               <h2 class="font-bold text-slate-800 text-lg"><i class="fa-solid fa-users-gear text-indigo-600 mr-2"></i>Manajemen Pengguna</h2>
@@ -840,12 +840,13 @@
           </button>
         `;
 
-        // Show/Hide admin-only elements
-        if (currentUser.role === "admin") {
-          document.querySelectorAll(".admin-only").forEach(el => el.classList.remove("hidden"));
-        } else {
-          document.querySelectorAll(".admin-only").forEach(el => el.classList.add("hidden"));
-        }
+        // Admin dan Operator boleh mengelola surat serta data siswa.
+        // Satu-satunya bagian yang khusus Admin adalah Manajemen Pengguna.
+        document.querySelectorAll(".admin-only").forEach(el => el.classList.remove("hidden"));
+        document.querySelectorAll(".user-management-only").forEach(el => {
+          if (String(currentUser.role).toLowerCase() === "admin") el.classList.remove("hidden");
+          else el.classList.add("hidden");
+        });
       } else {
         roleBadge.innerText = "Guest";
         container.innerHTML = `
@@ -1025,14 +1026,14 @@
 
       const siswa = dataSiswa.find(s => s.id == id);
       if (siswa) {
-        document.getElementById("quick-ttl").innerText = `${siswa.tempat_lahir}, ${siswa.tgl_lahir}`;
+        document.getElementById("quick-ttl").innerText = `${siswa.tempat_lahir}, ${formatTanggalExcel(siswa.tgl_lahir)}`;
         document.getElementById("quick-kelas").innerText = siswa.kelas;
         document.getElementById("quick-alamat").innerText = siswa.alamat;
         detailBox.classList.remove("hidden");
 
         // Render to Paper
         document.getElementById("surat-nama-siswa").innerText = siswa.nama;
-        document.getElementById("surat-ttl-siswa").innerText = `${siswa.tempat_lahir}, ${siswa.tgl_lahir}`;
+        document.getElementById("surat-ttl-siswa").innerText = `${siswa.tempat_lahir}, ${formatTanggalExcel(siswa.tgl_lahir)}`;
         document.getElementById("surat-kelas-siswa").innerText = siswa.kelas;
         document.getElementById("surat-alamat-siswa").innerText = siswa.alamat;
       }
@@ -1291,7 +1292,7 @@
             <td class="py-2.5 px-4 font-mono text-slate-500">${idx + 1}</td>
             <td class="py-2.5 px-4 font-mono">${s.nisn || '-'}</td>
             <td class="py-2.5 px-4 font-semibold text-slate-800">${s.nama || '-'}</td>
-            <td class="py-2.5 px-4">${s.tempat_lahir || '-'}, ${s.tgl_lahir || '-'}</td>
+            <td class="py-2.5 px-4">${s.tempat_lahir || '-'}, ${formatTanggalExcel(s.tgl_lahir) || '-'}</td>
             <td class="py-2.5 px-4"><span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">${s.kelas || '-'}</span></td>
             <td class="py-2.5 px-4 text-slate-600 max-w-xs truncate">${s.alamat || '-'}</td>
             <td class="py-2.5 px-4 text-center admin-only ${currentUser?.role === 'admin' ? '' : 'hidden'} space-x-1">
@@ -1557,24 +1558,45 @@
     function formatTanggalExcel(value) {
       if (value === null || value === undefined || value === "") return "";
       const bulan = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-      if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getDate()} ${bulan[value.getMonth()]} ${value.getFullYear()}`;
+      const tampilkan = (d, mo, y) => `${d} ${bulan[mo - 1]} ${y}`;
+
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return tampilkan(value.getDate(), value.getMonth() + 1, value.getFullYear());
+      }
       if (typeof value === "number" && Number.isFinite(value)) {
         const d = window.XLSX?.SSF?.parse_date_code(value);
-        if (d && d.y && d.m && d.d) return `${d.d} ${bulan[d.m - 1]} ${d.y}`;
+        if (d && d.y && d.m && d.d) return tampilkan(d.d, d.m, d.y);
         return String(value);
       }
+
       const raw = String(value).trim();
       if (!raw) return "";
-      let m = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+
+      // ISO yyyy-mm-dd or yyyy/mm/dd; avoid timezone conversion for date-only values.
+      let m = raw.match(/^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})(?:$|T)/);
       if (m) {
-        const y=+m[1], mo=+m[2], d=+m[3], dt=new Date(y,mo-1,d);
-        if (dt.getFullYear()===y && dt.getMonth()===mo-1 && dt.getDate()===d) return `${d} ${bulan[mo-1]} ${y}`;
+        const y=+m[1], mo=+m[2], d=+m[3];
+        if (mo>=1 && mo<=12 && d>=1 && d<=31) return tampilkan(d,mo,y);
       }
-      m = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+
+      // Indonesian/US-style numeric date d-m-yyyy or m-d-yyyy.
+      m = raw.match(/^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})$/);
       if (m) {
-        const d=+m[1], mo=+m[2], y=+m[3], dt=new Date(y,mo-1,d);
-        if (dt.getFullYear()===y && dt.getMonth()===mo-1 && dt.getDate()===d) return `${d} ${bulan[mo-1]} ${y}`;
+        let d=+m[1], mo=+m[2], y=+m[3];
+        if (mo>12 && d<=12) { const swap=d; d=mo; mo=swap; }
+        if (mo>=1 && mo<=12 && d>=1 && d<=31) return tampilkan(d,mo,y);
       }
+
+      // String produced by String(Date) in Apps Script, e.g. "Thu Sep 11 2008 00:00:00 GMT+0700 (...)"
+      if (/GMT|UTC|\\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\\b/i.test(raw)) {
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+          // Use local calendar components so a date-only sheet value does not show timezone text.
+          return tampilkan(parsed.getDate(), parsed.getMonth() + 1, parsed.getFullYear());
+        }
+      }
+
+      // Text dates such as "24 Oktober 2008" remain unchanged.
       return raw;
     }
 

@@ -1276,7 +1276,7 @@
         const hidden = query && !rowText.includes(query) ? 'style="display:none"' : "";
         tbody.innerHTML += `
           <tr class="hover:bg-slate-50 transition-all" ${hidden}>
-            <td class="py-2.5 px-3 admin-only ${currentUser?.role === 'admin' ? '' : 'hidden'}"><input type="checkbox" class="siswa-row-checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" ${selected} onchange="toggleSelectSiswa(this.value, this.checked)" aria-label="Pilih ${String(s.nama || 'siswa').replace(/"/g, '&quot;')}"></td>
+            <td class="py-2.5 px-2 text-center align-middle w-10 admin-only ${currentUser?.role === 'admin' ? '' : 'hidden'}"><input type="checkbox" class="siswa-row-checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" ${selected} onchange="toggleSelectSiswa(this.value, this.checked)" aria-label="Pilih ${String(s.nama || 'siswa').replace(/"/g, '&quot;')}"></td>
             <td class="py-2.5 px-4 font-mono text-slate-500">${idx + 1}</td>
             <td class="py-2.5 px-4 font-mono">${s.nisn || '-'}</td>
             <td class="py-2.5 px-4 font-semibold text-slate-800">${s.nama || '-'}</td>
@@ -1331,21 +1331,27 @@
         showToast("Centang minimal satu siswa terlebih dahulu.", "warning");
         return;
       }
-      if (!confirm(`Yakin menghapus ${ids.length} data siswa terpilih? Tindakan ini tidak dapat dibatalkan.`)) return;
-
-      dataSiswa = dataSiswa.filter(s => !ids.includes(String(s.id)));
-      ids.forEach(id => selectedSiswaIds.delete(id));
-      cacheLocalData();
-      renderTabelSiswa();
-      populateSiswaDropdown();
-      onSiswaSelected();
-      showToast(`${ids.length} data siswa dihapus dari tampilan lokal. Sinkronisasi berjalan...`, "info");
-
-      if (!IS_PREVIEW) {
-        const results = await Promise.allSettled(ids.map(id => apiPost({ action: "deleteSiswa", id })));
-        const failed = results.filter(r => r.status === "rejected").length;
-        if (failed) showToast(`${ids.length - failed} terhapus di database; ${failed} gagal sinkron. Silakan sinkronkan ulang.`, "warning");
-        else showToast(`${ids.length} data siswa berhasil dihapus.`, "success");
+      if (!confirm(`Yakin menghapus ${ids.length} data siswa terpilih dari aplikasi dan Spreadsheet? Tindakan ini tidak dapat dibatalkan.`)) return;
+      if (IS_PREVIEW) {
+        dataSiswa = dataSiswa.filter(s => !ids.includes(String(s.id)));
+        ids.forEach(id => selectedSiswaIds.delete(id));
+        cacheLocalData(); renderTabelSiswa(); populateSiswaDropdown(); onSiswaSelected();
+        showToast(`${ids.length} data siswa dihapus dari data preview.`, "success");
+        return;
+      }
+      try {
+        const result = await apiPost({ action: "bulkDeleteSiswa", ids });
+        const deletedIds = Array.isArray(result.deletedIds) ? result.deletedIds.map(String) : ids;
+        dataSiswa = dataSiswa.filter(s => !deletedIds.includes(String(s.id)));
+        deletedIds.forEach(id => selectedSiswaIds.delete(id));
+        cacheLocalData(); renderTabelSiswa(); populateSiswaDropdown(); onSiswaSelected();
+        if (result.notFound && result.notFound.length) {
+          showToast(`${deletedIds.length} data dihapus di Spreadsheet. ${result.notFound.length} ID tidak ditemukan di database.`, "warning");
+        } else {
+          showToast(`${deletedIds.length} data berhasil dihapus dari Spreadsheet dan aplikasi.`, "success");
+        }
+      } catch (err) {
+        showToast("Gagal menghapus dari Spreadsheet: " + err.message + ". Data lokal tidak dihapus.", "error");
       }
     }
 
@@ -1354,26 +1360,30 @@
         showToast("Database siswa sudah kosong.", "info");
         return;
       }
-      const first = confirm(`PERINGATAN: Hapus SEMUA ${dataSiswa.length} data siswa? Tindakan ini tidak dapat dibatalkan.`);
+      const first = confirm(`PERINGATAN: Hapus SEMUA ${dataSiswa.length} data siswa dari aplikasi dan Spreadsheet? Tindakan ini tidak dapat dibatalkan.`);
       if (!first) return;
-      const second = confirm("Konfirmasi sekali lagi: seluruh data siswa akan dihapus dari database. Lanjutkan?");
+      const second = confirm("Konfirmasi kedua: semua baris data siswa pada Spreadsheet akan dihapus. Lanjutkan?");
       if (!second) return;
 
-      const ids = dataSiswa.map(s => String(s.id));
-      dataSiswa = [];
-      selectedSiswaIds.clear();
-      cacheLocalData();
-      renderTabelSiswa();
-      populateSiswaDropdown();
-      onSiswaSelected();
-
-      if (!IS_PREVIEW) {
-        const results = await Promise.allSettled(ids.map(id => apiPost({ action: "deleteSiswa", id })));
-        const failed = results.filter(r => r.status === "rejected").length;
-        if (failed) showToast(`Penghapusan lokal selesai, tetapi ${failed} data gagal dihapus dari database.`, "warning");
-        else showToast("Semua data siswa berhasil dihapus.", "success");
-      } else {
-        showToast("Semua data siswa dihapus.", "success");
+      if (IS_PREVIEW) {
+        dataSiswa = []; selectedSiswaIds.clear();
+        cacheLocalData(); renderTabelSiswa(); populateSiswaDropdown(); onSiswaSelected();
+        showToast("Semua data preview dihapus.", "success");
+        return;
+      }
+      try {
+        const result = await apiPost({ action: "bulkDeleteSiswa", ids: dataSiswa.map(s => String(s.id)) });
+        const deletedIds = Array.isArray(result.deletedIds) ? result.deletedIds.map(String) : dataSiswa.map(s => String(s.id));
+        dataSiswa = dataSiswa.filter(s => !deletedIds.includes(String(s.id)));
+        deletedIds.forEach(id => selectedSiswaIds.delete(id));
+        cacheLocalData(); renderTabelSiswa(); populateSiswaDropdown(); onSiswaSelected();
+        if (result.notFound && result.notFound.length) {
+          showToast(`${deletedIds.length} data dihapus di Spreadsheet; ${result.notFound.length} ID tidak ditemukan.`, "warning");
+        } else {
+          showToast(`Berhasil menghapus ${deletedIds.length} data siswa dari Spreadsheet dan aplikasi.`, "success");
+        }
+      } catch (err) {
+        showToast("Gagal menghapus semua data dari Spreadsheet: " + err.message + ". Data lokal dipertahankan.", "error");
       }
     }
 
@@ -1440,19 +1450,26 @@
 
     function editSiswa(id) { openFormSiswaModal(id); }
 
-    function deleteSiswa(id) {
-      if (confirm("Apakah Anda yakin ingin menghapus data siswa ini?")) {
-        dataSiswa = dataSiswa.filter(s => s.id != id);
-        populateSiswaDropdown();
-        renderTabelSiswa();
-        cacheLocalData();
-        showToast("Data siswa dihapus dari tampilan lokal.", "info");
-
-        if (!IS_PREVIEW) {
-          apiPost({ action: "deleteSiswa", id })
-            .then(() => showToast("Penghapusan tersinkron ke database.", "success"))
-            .catch(err => showToast("Perubahan lokal tersimpan, sinkronisasi gagal: " + err.message, "warning"));
-        }
+    async function deleteSiswa(id) {
+      const student = dataSiswa.find(s => String(s.id) === String(id));
+      if (!student) return;
+      if (!confirm(`Hapus data siswa "${student.nama}" dari aplikasi dan Spreadsheet?`)) return;
+      if (IS_PREVIEW) {
+        dataSiswa = dataSiswa.filter(s => String(s.id) !== String(id));
+        selectedSiswaIds.delete(String(id));
+        populateSiswaDropdown(); renderTabelSiswa(); cacheLocalData();
+        showToast("Data siswa preview dihapus.", "success");
+        return;
+      }
+      try {
+        const result = await apiPost({ action: "deleteSiswa", id: String(id) });
+        if (!result.success) throw new Error(result.message || "Backend tidak mengonfirmasi penghapusan.");
+        dataSiswa = dataSiswa.filter(s => String(s.id) !== String(id));
+        selectedSiswaIds.delete(String(id));
+        populateSiswaDropdown(); renderTabelSiswa(); cacheLocalData(); onSiswaSelected();
+        showToast("Data siswa berhasil dihapus dari Spreadsheet dan aplikasi.", "success");
+      } catch (err) {
+        showToast("Gagal menghapus data dari Spreadsheet: " + err.message + ". Data lokal dipertahankan.", "error");
       }
     }
 

@@ -207,7 +207,7 @@
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Pilih Data Siswa</label>
               <div class="mb-2">
-                <input type="text" id="search-pilih-siswa" oninput="filterPilihanSiswa()" autocomplete="off"
+                <input type="text" id="search-pilih-siswa" oninput="filterPilihanSiswa()" autocomplete="off" spellcheck="false"
                   placeholder="Ketik nama siswa untuk mencari..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
               </div>
               <div class="relative">
@@ -407,6 +407,7 @@
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="bg-slate-50 text-slate-600 text-xs uppercase font-semibold border-b border-slate-200">
+                  <th class="py-3 px-2 text-center align-middle w-10 admin-only hidden"><input id="select-all-siswa" type="checkbox" onchange="toggleSelectAllSiswa(this.checked)" aria-label="Pilih semua siswa" title="Pilih semua siswa" class="align-middle cursor-pointer"></th>
                   <th class="py-3 px-4">No</th>
                   <th class="py-3 px-4">NISN</th>
                   <th class="py-3 px-4">Nama Siswa</th>
@@ -987,16 +988,26 @@
     }
 
     function filterPilihanSiswa() {
+      const searchInput = document.getElementById("search-pilih-siswa");
       const select = document.getElementById("select-siswa");
       const currentId = select.value;
+      const cursorStart = searchInput ? searchInput.selectionStart : null;
+      const cursorEnd = searchInput ? searchInput.selectionEnd : null;
+
       populateSiswaDropdown();
-      // Jika pilihan lama tidak lagi sesuai pencarian, kosongkan pilihan agar tidak salah cetak.
+
+      // Jangan memindahkan fokus ke dropdown; biarkan pengguna mengetik nama lengkap.
       if (currentId && ![...select.options].some(option => option.value === currentId)) {
         select.value = "";
         onSiswaSelected();
       }
       select.size = 1;
-      select.focus();
+      if (searchInput) {
+        searchInput.focus({ preventScroll: true });
+        if (cursorStart !== null && cursorEnd !== null) {
+          try { searchInput.setSelectionRange(cursorStart, cursorEnd); } catch (_) {}
+        }
+      }
     }
 
     function onSiswaSelected() {

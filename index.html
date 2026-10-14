@@ -206,6 +206,10 @@
             <!-- Form Pilih Siswa -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Pilih Data Siswa</label>
+              <div class="mb-2">
+                <input type="text" id="search-pilih-siswa" oninput="filterPilihanSiswa()" autocomplete="off"
+                  placeholder="Ketik nama siswa untuk mencari..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+              </div>
               <div class="relative">
                 <select id="select-siswa" onchange="onSiswaSelected()" class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all appearance-none bg-white">
                   <option value="">-- Pilih Nama Siswa --</option>
@@ -372,6 +376,13 @@
               <input type="text" id="search-siswa-input" onkeyup="filterTabelSiswa()" placeholder="Cari nama/kelas..." class="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
               <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-xs"></i>
             </div>
+
+            <button onclick="deleteSelectedSiswa()" class="admin-only hidden bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
+              <i class="fa-solid fa-trash-can mr-1.5"></i> Hapus Terpilih (<span id="selected-siswa-count">0</span>)
+            </button>
+            <button onclick="deleteAllSiswa()" class="admin-only hidden bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
+              <i class="fa-solid fa-trash mr-1.5"></i> Hapus Semua
+            </button>
 
             <!-- Download Template Excel -->
             <button onclick="downloadTemplateExcel()" class="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-sm transition-all flex items-center">
@@ -815,6 +826,8 @@
         }
         if (settings.settings) appSettings = { ...appSettings, ...settings.settings };
         if (Array.isArray(students.siswa)) dataSiswa = students.siswa;
+        const currentIds = new Set(dataSiswa.map(s => String(s.id)));
+        [...selectedSiswaIds].forEach(id => { if (!currentIds.has(id)) selectedSiswaIds.delete(id); });
         cacheLocalData();
         loadSettingsToUI();
         populateSiswaDropdown();
@@ -891,10 +904,34 @@
     // ================= GENERATOR SURAT LOGIC =================
     function populateSiswaDropdown() {
       const select = document.getElementById("select-siswa");
+      const previousId = select.value;
+      const query = (document.getElementById("search-pilih-siswa")?.value || "").trim().toLocaleLowerCase("id");
       select.innerHTML = `<option value="">-- Pilih Nama Siswa --</option>`;
-      dataSiswa.forEach(s => {
-        select.innerHTML += `<option value="${s.id}">${s.nama} - (${s.kelas})</option>`;
-      });
+      dataSiswa
+        .filter(s => !query || `${s.nama || ""} ${s.nisn || ""} ${s.kelas || ""}`.toLocaleLowerCase("id").includes(query))
+        .sort((a, b) => String(a.nama || "").localeCompare(String(b.nama || ""), "id"))
+        .forEach(s => {
+          const option = document.createElement("option");
+          option.value = s.id;
+          option.textContent = `${s.nama} - (${s.kelas || "-"})`;
+          select.appendChild(option);
+        });
+      if (previousId && [...select.options].some(option => option.value === previousId)) {
+        select.value = previousId;
+      }
+    }
+
+    function filterPilihanSiswa() {
+      const select = document.getElementById("select-siswa");
+      const currentId = select.value;
+      populateSiswaDropdown();
+      // Jika pilihan lama tidak lagi sesuai pencarian, kosongkan pilihan agar tidak salah cetak.
+      if (currentId && ![...select.options].some(option => option.value === currentId)) {
+        select.value = "";
+        onSiswaSelected();
+      }
+      select.size = 1;
+      select.focus();
     }
 
     function onSiswaSelected() {
@@ -1037,6 +1074,8 @@
     }
 
     // ================= MANAGEMENT SISWA LOGIC =================
+    const selectedSiswaIds = new Set();
+
     function renderTabelSiswa() {
       const tbody = document.getElementById("tabel-siswa-body");
       const emptyMsg = document.getElementById("empty-siswa-msg");
@@ -1044,36 +1083,120 @@
 
       if (dataSiswa.length === 0) {
         emptyMsg.classList.remove("hidden");
-        return;
       } else {
         emptyMsg.classList.add("hidden");
       }
 
+      const query = (document.getElementById("search-siswa-input")?.value || "").toLocaleLowerCase("id");
       dataSiswa.forEach((s, idx) => {
+        const selected = selectedSiswaIds.has(String(s.id)) ? "checked" : "";
+        const rowText = `${s.nisn || ""} ${s.nama || ""} ${s.tempat_lahir || ""} ${s.tgl_lahir || ""} ${s.kelas || ""} ${s.alamat || ""}`.toLocaleLowerCase("id");
+        const hidden = query && !rowText.includes(query) ? 'style="display:none"' : "";
         tbody.innerHTML += `
-          <tr class="hover:bg-slate-50 transition-all">
+          <tr class="hover:bg-slate-50 transition-all" ${hidden}>
+            <td class="py-2.5 px-3 admin-only ${currentUser?.role === 'admin' ? '' : 'hidden'}"><input type="checkbox" class="siswa-row-checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" ${selected} onchange="toggleSelectSiswa(this.value, this.checked)" aria-label="Pilih ${String(s.nama || 'siswa').replace(/"/g, '&quot;')}"></td>
             <td class="py-2.5 px-4 font-mono text-slate-500">${idx + 1}</td>
             <td class="py-2.5 px-4 font-mono">${s.nisn || '-'}</td>
-            <td class="py-2.5 px-4 font-semibold text-slate-800">${s.nama}</td>
-            <td class="py-2.5 px-4">${s.tempat_lahir}, ${s.tgl_lahir}</td>
-            <td class="py-2.5 px-4"><span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">${s.kelas}</span></td>
-            <td class="py-2.5 px-4 text-slate-600 max-w-xs truncate">${s.alamat}</td>
+            <td class="py-2.5 px-4 font-semibold text-slate-800">${s.nama || '-'}</td>
+            <td class="py-2.5 px-4">${s.tempat_lahir || '-'}, ${s.tgl_lahir || '-'}</td>
+            <td class="py-2.5 px-4"><span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">${s.kelas || '-'}</span></td>
+            <td class="py-2.5 px-4 text-slate-600 max-w-xs truncate">${s.alamat || '-'}</td>
             <td class="py-2.5 px-4 text-center admin-only ${currentUser?.role === 'admin' ? '' : 'hidden'} space-x-1">
-              <button onclick="editSiswa('${s.id}')" class="text-indigo-600 hover:text-indigo-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
-              <button onclick="deleteSiswa('${s.id}')" class="text-rose-600 hover:text-rose-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+              <button onclick="editSiswa('${String(s.id).replace(/'/g, "\\'")}')" class="text-indigo-600 hover:text-indigo-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+              <button onclick="deleteSiswa('${String(s.id).replace(/'/g, "\\'")}')" class="text-rose-600 hover:text-rose-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
             </td>
-          </tr>
-        `;
+          </tr>`;
       });
+      updateSelectedSiswaUI();
+    }
+
+    function toggleSelectSiswa(id, checked) {
+      if (checked) selectedSiswaIds.add(String(id));
+      else selectedSiswaIds.delete(String(id));
+      updateSelectedSiswaUI();
+    }
+
+    function toggleSelectAllSiswa(checked) {
+      const query = (document.getElementById("search-siswa-input")?.value || "").toLocaleLowerCase("id");
+      dataSiswa.forEach(s => {
+        const rowText = `${s.nisn || ""} ${s.nama || ""} ${s.tempat_lahir || ""} ${s.tgl_lahir || ""} ${s.kelas || ""} ${s.alamat || ""}`.toLocaleLowerCase("id");
+        if (!query || rowText.includes(query)) {
+          if (checked) selectedSiswaIds.add(String(s.id));
+          else selectedSiswaIds.delete(String(s.id));
+        }
+      });
+      renderTabelSiswa();
+    }
+
+    function updateSelectedSiswaUI() {
+      const count = selectedSiswaIds.size;
+      const countEl = document.getElementById("selected-siswa-count");
+      if (countEl) countEl.textContent = count;
+      const allBox = document.getElementById("select-all-siswa");
+      if (allBox) {
+        const visibleIds = dataSiswa.filter(s => {
+          const q = (document.getElementById("search-siswa-input")?.value || "").toLocaleLowerCase("id");
+          return !q || `${s.nisn || ""} ${s.nama || ""} ${s.kelas || ""}`.toLocaleLowerCase("id").includes(q);
+        }).map(s => String(s.id));
+        allBox.checked = visibleIds.length > 0 && visibleIds.every(id => selectedSiswaIds.has(id));
+        allBox.indeterminate = visibleIds.some(id => selectedSiswaIds.has(id)) && !allBox.checked;
+      }
+    }
+
+    async function deleteSelectedSiswa() {
+      const ids = [...selectedSiswaIds].filter(id => dataSiswa.some(s => String(s.id) === id));
+      if (!ids.length) {
+        showToast("Centang minimal satu siswa terlebih dahulu.", "warning");
+        return;
+      }
+      if (!confirm(`Yakin menghapus ${ids.length} data siswa terpilih? Tindakan ini tidak dapat dibatalkan.`)) return;
+
+      dataSiswa = dataSiswa.filter(s => !ids.includes(String(s.id)));
+      ids.forEach(id => selectedSiswaIds.delete(id));
+      cacheLocalData();
+      renderTabelSiswa();
+      populateSiswaDropdown();
+      onSiswaSelected();
+      showToast(`${ids.length} data siswa dihapus dari tampilan lokal. Sinkronisasi berjalan...`, "info");
+
+      if (!IS_PREVIEW) {
+        const results = await Promise.allSettled(ids.map(id => apiPost({ action: "deleteSiswa", id })));
+        const failed = results.filter(r => r.status === "rejected").length;
+        if (failed) showToast(`${ids.length - failed} terhapus di database; ${failed} gagal sinkron. Silakan sinkronkan ulang.`, "warning");
+        else showToast(`${ids.length} data siswa berhasil dihapus.`, "success");
+      }
+    }
+
+    async function deleteAllSiswa() {
+      if (!dataSiswa.length) {
+        showToast("Database siswa sudah kosong.", "info");
+        return;
+      }
+      const first = confirm(`PERINGATAN: Hapus SEMUA ${dataSiswa.length} data siswa? Tindakan ini tidak dapat dibatalkan.`);
+      if (!first) return;
+      const second = confirm("Konfirmasi sekali lagi: seluruh data siswa akan dihapus dari database. Lanjutkan?");
+      if (!second) return;
+
+      const ids = dataSiswa.map(s => String(s.id));
+      dataSiswa = [];
+      selectedSiswaIds.clear();
+      cacheLocalData();
+      renderTabelSiswa();
+      populateSiswaDropdown();
+      onSiswaSelected();
+
+      if (!IS_PREVIEW) {
+        const results = await Promise.allSettled(ids.map(id => apiPost({ action: "deleteSiswa", id })));
+        const failed = results.filter(r => r.status === "rejected").length;
+        if (failed) showToast(`Penghapusan lokal selesai, tetapi ${failed} data gagal dihapus dari database.`, "warning");
+        else showToast("Semua data siswa berhasil dihapus.", "success");
+      } else {
+        showToast("Semua data siswa dihapus.", "success");
+      }
     }
 
     function filterTabelSiswa() {
-      const query = document.getElementById("search-siswa-input").value.toLowerCase();
-      const rows = document.querySelectorAll("#tabel-siswa-body tr");
-      rows.forEach(row => {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(query) ? "" : "none";
-      });
+      renderTabelSiswa();
     }
 
     function openFormSiswaModal(editId = null) {
@@ -1188,7 +1311,7 @@
                 nisn: row[0] ? String(row[0]) : "-",
                 nama: String(row[1]),
                 tempat_lahir: row[2] ? String(row[2]) : "-",
-                tgl_lahir: row[3] ? String(row[3]) : "-",
+                tgl_lahir: formatTanggalExcel(row[3]) || "-",
                 kelas: row[4] ? String(row[4]) : "-",
                 alamat: row[5] ? String(row[5]) : "-"
               };
@@ -1219,6 +1342,31 @@
     // ================= GAS BACKEND SYNC =================
     function fetchSettingsFromGAS() { return syncFromBackend(); }
     function fetchSiswaFromGAS() { return syncFromBackend(); }
+
+    // Normalisasi tanggal lahir dari Excel: serial date atau teks.
+    function formatTanggalExcel(value) {
+      if (value === null || value === undefined || value === "") return "";
+      const bulan = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+      if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getDate()} ${bulan[value.getMonth()]} ${value.getFullYear()}`;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const d = window.XLSX?.SSF?.parse_date_code(value);
+        if (d && d.y && d.m && d.d) return `${d.d} ${bulan[d.m - 1]} ${d.y}`;
+        return String(value);
+      }
+      const raw = String(value).trim();
+      if (!raw) return "";
+      let m = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      if (m) {
+        const y=+m[1], mo=+m[2], d=+m[3], dt=new Date(y,mo-1,d);
+        if (dt.getFullYear()===y && dt.getMonth()===mo-1 && dt.getDate()===d) return `${d} ${bulan[mo-1]} ${y}`;
+      }
+      m = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+      if (m) {
+        const d=+m[1], mo=+m[2], y=+m[3], dt=new Date(y,mo-1,d);
+        if (dt.getFullYear()===y && dt.getMonth()===mo-1 && dt.getDate()===d) return `${d} ${bulan[mo-1]} ${y}`;
+      }
+      return raw;
+    }
 
     // Download template Excel/CSV for student import.
     function downloadTemplateExcel() {
